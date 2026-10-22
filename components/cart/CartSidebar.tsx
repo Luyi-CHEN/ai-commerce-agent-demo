@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react';
+import { Minus, Plus, ShoppingCart, Trash2, X } from 'lucide-react';
 import type { Product } from '@/lib/types';
 import { calculateShipping, calculateSubtotal, calculateTotal, formatCurrency } from '@/lib/utils';
 import { useCartStore } from '@/store/cart-store';
@@ -10,9 +10,10 @@ import { useCartStore } from '@/store/cart-store';
 interface CartSidebarProps {
   upsells: Product[];
   onOpenProduct: (product: Product) => void;
+  onClose?: () => void;
 }
 
-export function CartSidebar({ upsells, onOpenProduct }: CartSidebarProps) {
+export function CartSidebar({ upsells, onOpenProduct, onClose }: CartSidebarProps) {
   const items = useCartStore((state) => state.items);
   const removeItem = useCartStore((state) => state.removeItem);
   const updateQuantity = useCartStore((state) => state.updateQuantity);
@@ -29,9 +30,20 @@ export function CartSidebar({ upsells, onOpenProduct }: CartSidebarProps) {
           <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Shopping cart</p>
           <h3 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{items.length} active line items</h3>
         </div>
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-soft">
-          <ShoppingCart size={20} />
-        </div>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close cart"
+            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-soft transition hover:text-slate-950"
+          >
+            <X size={20} />
+          </button>
+        ) : (
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-soft">
+            <ShoppingCart size={20} />
+          </div>
+        )}
       </div>
 
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-y-contain pr-1">

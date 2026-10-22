@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Sparkles } from 'lucide-react';
+import { ShoppingCart, Sparkles } from 'lucide-react';
 import { CartSidebar } from '@/components/cart/CartSidebar';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { SuggestedPrompts } from '@/components/chat/SuggestedPrompts';
 import { ProductDetailModal } from '@/components/product/ProductDetailModal';
 import { suggestedPrompts } from '@/data/prompts';
-import { buildAssistantPlan, findComplementaryProducts, getProductById } from '@/lib/product-tools';
+import { buildAssistantPlan, findComplementaryProducts } from '@/lib/product-tools';
 import type { AssistantPlan, Product } from '@/lib/types';
-import { sleep } from '@/lib/utils';
+import { calculateTotal, formatCurrency, sleep } from '@/lib/utils';
 import { useCartStore } from '@/store/cart-store';
 import { useChatStore } from '@/store/chat-store';
 
@@ -73,6 +73,7 @@ const THINKING_DELAY_MS = 650;
 const FIRST_RECOMMENDATION_DELAY_MS = 640;
 const BETWEEN_RECOMMENDATIONS_DELAY_MS = 1400;
 const PROMPTS_DELAY_AFTER_RECOMMENDATIONS_MS = 2000;
+const CHECKOUT_REDIRECT_DELAY_MS = 900;
 
 export function AIChatPanel() {
   const router = useRouter();
@@ -81,6 +82,7 @@ export function AIChatPanel() {
   const messageViewportRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
 
   const messages = useChatStore((state) => state.messages);
   const loading = useChatStore((state) => state.loading);
@@ -94,6 +96,8 @@ export function AIChatPanel() {
 
   const cartItems = useCartStore((state) => state.items);
   const addItem = useCartStore((state) => state.addItem);
+  const removeItem = useCartStore((state) => state.removeItem);
+  const clearCart = useCartStore((state) => state.clearCart);
 
   const fallbackUpsells = useMemo(
     () => (cartItems.length > 0 ? findComplementaryProducts(cartItems.map((line) => line.product.id)) : []),
@@ -103,6 +107,17 @@ export function AIChatPanel() {
   const visibleUpsells = upsells.length > 0 ? upsells : fallbackUpsells;
   const hasUserMessages = messages.some((message) => message.role === 'user');
   const showSuggestedPrompts = hasUserMessages && !loading;
+  const cartUnits = cartItems.reduce((sum, line) => sum + line.quantity, 0);
+  const cartTotal = calculateTotal(cartItems);
+
+  useEffect(() => {
+    if (!cartOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setCartOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [cartOpen]);
 
   const streamAssistantReply = useCallback(
     async (messageId: string, reply: string) => {
@@ -180,19 +195,21 @@ export function AIChatPanel() {
       const assistantMessageId = startAssistantMessage();
 
       try {
-        const plan = buildAssistantPlan(
-          message,
-          cartItems.map((line) => line.product.id),
-        );
+        const lastRecommendations =
+          [...messages].reverse().find((entry) => entry.role === 'assistant' && entry.recommendations?.length)?.recommendations ?? [];
+        const plan = buildAssistantPlan(message, { cart: cartItems, lastRecommendations });
         await sleep(THINKING_DELAY_MS);
-        if (plan.cartAction) {
-          const product = getProductById(plan.cartAction.productId);
-          if (product) {
-            addItem(product, plan.cartAction.quantity);
-          }
-        }
+        plan.cartActions?.forEach((action) => {
+          if (action.type === 'add') addItem(action.product, action.quantity);
+          else if (action.type === 'remove') removeItem(action.productId);
+          else clearCart();
+        });
         await streamAssistantReply(assistantMessageId, plan.reply);
         await revealAssistantPlan(assistantMessageId, plan);
+        if (plan.navigateTo === 'checkout') {
+          await sleep(CHECKOUT_REDIRECT_DELAY_MS);
+          router.push('/checkout');
+        }
       } catch {
         const fallback = 'I hit a temporary issue while shaping the response, but I can still help you refine the cart and shortlist locally.';
         await streamAssistantReply(assistantMessageId, fallback);
@@ -207,7 +224,7 @@ export function AIChatPanel() {
         setLoading(false);
       }
     },
-    [addItem, addUserMessage, applyAssistantPlan, cartItems, fallbackUpsells, loading, revealAssistantPlan, setLoading, startAssistantMessage, streamAssistantReply],
+    [addItem, addUserMessage, applyAssistantPlan, cartItems, clearCart, fallbackUpsells, loading, messages, removeItem, revealAssistantPlan, router, setLoading, startAssistantMessage, streamAssistantReply],
   );
 
   useEffect(() => {
@@ -230,12 +247,12 @@ export function AIChatPanel() {
 
   return (
     <>
-      <section className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1.4fr)_minmax(0,1fr)] gap-3 lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-1 lg:gap-5">
+      <section className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] gap-3 lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-1 lg:gap-5">
         <div className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-4xl shadow-soft">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 px-5 py-4">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-3 sm:px-5 sm:py-4">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">AI shopping chat</p>
-              <h2 className="mt-1 text-[1.65rem] font-semibold tracking-tight text-slate-950 lg:text-[1.8rem]">Premium sales concierge</h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 sm:text-sm">AI shopping chat</p>
+              <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950 sm:text-[1.65rem] lg:text-[1.8rem]">Premium sales concierge</h2>
             </div>
             <button
               type="button"
@@ -247,7 +264,7 @@ export function AIChatPanel() {
             </button>
           </div>
 
-          <div ref={messageViewportRef} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4">
+          <div ref={messageViewportRef} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-4 sm:px-5">
             {messages.length > 0 ? (
               <div className="space-y-4">
                 {messages.map((message) => (
@@ -281,10 +298,44 @@ export function AIChatPanel() {
           </div>
         </div>
 
-        <div className="min-h-0">
+        <div className="hidden min-h-0 lg:block">
           <CartSidebar upsells={visibleUpsells} onOpenProduct={setSelectedProduct} />
         </div>
+
+        <button
+          type="button"
+          onClick={() => setCartOpen(true)}
+          className="glass-panel flex items-center justify-between gap-3 rounded-3xl px-4 py-3 text-left shadow-soft lg:hidden"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white">
+              <ShoppingCart size={18} />
+              {cartUnits > 0 ? (
+                <span className="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-brand px-1 text-center text-[11px] font-semibold leading-5 text-white">
+                  {cartUnits}
+                </span>
+              ) : null}
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-slate-950">
+                {cartUnits > 0 ? `${cartUnits} ${cartUnits === 1 ? 'item' : 'items'} in your cart` : 'Your cart is empty'}
+              </span>
+              <span className="block truncate text-xs text-slate-500">
+                {cartUnits > 0 ? `Total ${formatCurrency(cartTotal)}` : 'Ask the concierge to add a pair'}
+              </span>
+            </span>
+          </span>
+          <span className="shrink-0 rounded-2xl bg-slate-950 px-3.5 py-2 text-xs font-medium text-white">View cart</span>
+        </button>
       </section>
+
+      {cartOpen ? (
+        <div className="fixed inset-0 z-40 flex items-end bg-slate-950/40 backdrop-blur-sm lg:hidden" onClick={() => setCartOpen(false)}>
+          <div className="h-[85dvh] w-full p-3" onClick={(event) => event.stopPropagation()}>
+            <CartSidebar upsells={visibleUpsells} onOpenProduct={setSelectedProduct} onClose={() => setCartOpen(false)} />
+          </div>
+        </div>
+      ) : null}
 
       <ProductDetailModal product={selectedProduct} onClose={() => setSelectedProduct(null)} onAddToCart={(product) => addItem(product, 1)} />
     </>

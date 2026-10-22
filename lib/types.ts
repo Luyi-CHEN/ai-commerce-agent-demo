@@ -31,20 +31,21 @@ export interface ChatMessage {
 }
 
 export interface ToolCallLog {
-  tool: 'searchProducts' | 'recommendProducts' | 'addToCart';
+  tool: 'searchProducts' | 'recommendProducts' | 'addToCart' | 'removeFromCart' | 'clearCart' | 'goToCheckout';
   input: Record<string, unknown>;
   result: string;
 }
 
-export interface CartAction {
-  productId: string;
-  quantity: number;
-}
+export type CartAction =
+  | { type: 'add'; product: Product; quantity: number }
+  | { type: 'remove'; productId: string }
+  | { type: 'clear' };
 
 export interface AssistantPlan {
   reply: string;
   recommendations: Product[];
   upsells: Product[];
   toolCalls: ToolCallLog[];
-  cartAction?: CartAction;
+  cartActions?: CartAction[];
+  navigateTo?: 'checkout';
 }
