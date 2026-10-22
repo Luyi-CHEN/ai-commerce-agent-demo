@@ -43,7 +43,7 @@ export function MessageBubble({ message, onAddToCart, onOpenDetail }: MessageBub
                     ? 'min-h-[78px] px-5 py-4 text-[15px] leading-7 md:min-h-[88px] md:px-6'
                     : 'min-h-[64px] px-4 py-3 leading-[1.72]'
                 }`
-              : 'bg-slate-950 text-white'
+              : 'bg-slate-950 px-4 py-3 leading-[1.72] text-white'
           }`}
           style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
         >
