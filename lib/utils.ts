@@ -31,12 +31,19 @@ export interface PriceRange {
   max?: number;
 }
 
-const PRICE = String.raw`\$?(\d{2,4})(?:\s*(?:usd|dollars|bucks))?`;
+const CURRENCY = String.raw`(?:\$|usd|dollars?|bucks)`;
+const PRICE = String.raw`\$?\s*(\d{2,4})(?:\s*${CURRENCY})?`;
+const MAX_KEYWORDS = [
+  'under', 'below', 'less than', 'up to', 'max(?:imum)?', 'budget(?: of| is)?', 'no more than', 'within', 'cheaper than',
+  'at most', 'only have', 'have only', 'only got', 'got only', 'i have', "i've got", 'i got',
+  '(?:can|could|want to|willing to) spend', 'spend', 'spending', 'afford',
+].join('|');
+const MIN_KEYWORDS = ['over', 'above', 'more than', 'at least', 'starting at'].join('|');
 
 export const extractPriceRange = (message: string): PriceRange => {
   const range =
     message.match(new RegExp(String.raw`(?:between|from)\s*${PRICE}\s*(?:-|–|to|and)\s*${PRICE}`, 'i')) ??
-    message.match(new RegExp(String.raw`\$(\d{2,4})\s*(?:-|–|to)\s*\$?(\d{2,4})`, 'i'));
+    message.match(new RegExp(String.raw`\$\s*(\d{2,4})\s*(?:-|–|to)\s*\$?\s*(\d{2,4})`, 'i'));
   if (range) {
     const [low, high] = [Number(range[1]), Number(range[2])].sort((a, b) => a - b);
     return { min: low, max: high };
@@ -48,10 +55,15 @@ export const extractPriceRange = (message: string): PriceRange => {
     return { min: Math.floor(target * 0.85), max: Math.ceil(target * 1.15) };
   }
 
-  const min = message.match(new RegExp(String.raw`(?:over|above|more than|at least|starting at)\s*${PRICE}`, 'i'));
+  const min =
+    message.match(new RegExp(String.raw`\b(?:${MIN_KEYWORDS})\s*${PRICE}`, 'i')) ??
+    message.match(new RegExp(String.raw`${PRICE}\s*(?:\+|or more|and up|plus)`, 'i'));
   const max =
-    message.match(new RegExp(String.raw`(?:under|below|less than|up to|max(?:imum)?|budget(?: of| is)?|no more than|within|cheaper than)\s*${PRICE}`, 'i')) ??
-    (min ? null : message.match(/\$(\d{2,4})/));
+    message.match(new RegExp(String.raw`\b(?:${MAX_KEYWORDS})\s*${PRICE}`, 'i')) ??
+    message.match(new RegExp(String.raw`${PRICE}\s*(?:or less|or under|max\b|tops|at most)`, 'i')) ??
+    (min
+      ? null
+      : (message.match(/\$\s*(\d{2,4})/) ?? message.match(new RegExp(String.raw`(\d{2,4})\s*${CURRENCY}`, 'i'))));
 
   return {
     ...(min ? { min: Number(min[1]) } : {}),
