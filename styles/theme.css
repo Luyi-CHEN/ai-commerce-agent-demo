@@ -1,0 +1,8 @@
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --panel: rgba(255, 255, 255, 0.82);
+  --border: rgba(148, 163, 184, 0.24);
+  --brand: #2563eb;
+  --accent: #7c3aed;
+}
